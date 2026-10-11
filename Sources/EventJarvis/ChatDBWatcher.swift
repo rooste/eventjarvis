@@ -3,8 +3,11 @@ import Foundation
 
 /// Watches the ~/Library/Messages/ directory for FSEvents and calls a handler
 /// when chat.db (or its WAL/SHM files) changes.
+/// Also runs a fallback timer poll every 5 seconds in case FSEvents misses events.
+@MainActor
 final class ChatDBWatcher {
     private var stream: FSEventStreamRef?
+    private var fallbackTimer: Timer?
     private let directoryPath: String
     private let onChange: () -> Void
     private var lastPollTime: Date = .distantPast
@@ -16,6 +19,23 @@ final class ChatDBWatcher {
     }
 
     func start() {
+        startFSEvents()
+        startFallbackTimer()
+    }
+
+    func stop() {
+        if let stream {
+            FSEventStreamStop(stream)
+            FSEventStreamInvalidate(stream)
+            FSEventStreamRelease(stream)
+            self.stream = nil
+        }
+        fallbackTimer?.invalidate()
+        fallbackTimer = nil
+        Log.info("Stopped watching chat.db")
+    }
+
+    private func startFSEvents() {
         let pathsToWatch = [directoryPath] as CFArray
 
         var context = FSEventStreamContext()
@@ -49,25 +69,27 @@ final class ChatDBWatcher {
         }
 
         self.stream = stream
-        FSEventStreamSetDispatchQueue(stream, .main)
+        FSEventStreamScheduleWithRunLoop(stream, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
         FSEventStreamStart(stream)
-        Log.info("Watching \(directoryPath) for chat.db changes")
+        Log.info("Watching \(directoryPath) for chat.db changes (FSEvents)")
     }
 
-    func stop() {
-        guard let stream else { return }
-        FSEventStreamStop(stream)
-        FSEventStreamInvalidate(stream)
-        FSEventStreamRelease(stream)
-        self.stream = nil
-        Log.info("Stopped watching chat.db")
+    private func startFallbackTimer() {
+        let timer = Timer(timeInterval: 5.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.handleChange()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .default)
+        fallbackTimer = timer
+        Log.info("Fallback poll timer started (5s interval)")
     }
 
     private func handleChange() {
         let now = Date()
         guard now.timeIntervalSince(lastPollTime) >= Self.debounceInterval else { return }
         lastPollTime = now
-        Log.debug("chat.db change detected")
+        Log.debug("Polling for new messages")
         onChange()
     }
 }

@@ -10,28 +10,44 @@ enum Log {
         return f
     }()
 
+    nonisolated(unsafe) private static var fileHandle: FileHandle?
+
+    static func configure(logFile: String) {
+        let dir = (logFile as NSString).deletingLastPathComponent
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+
+        if !FileManager.default.fileExists(atPath: logFile) {
+            FileManager.default.createFile(atPath: logFile, contents: nil)
+        }
+
+        fileHandle = FileHandle(forWritingAtPath: logFile)
+        fileHandle?.seekToEndOfFile()
+    }
+
     static func info(_ message: String) {
         logger.info("\(message, privacy: .public)")
-        stderr("INFO", message)
+        emit("INFO", message)
     }
 
     static func error(_ message: String) {
         logger.error("\(message, privacy: .public)")
-        stderr("ERROR", message)
+        emit("ERROR", message)
     }
 
     static func debug(_ message: String) {
         logger.debug("\(message, privacy: .public)")
-        stderr("DEBUG", message)
+        emit("DEBUG", message)
     }
 
     static func warn(_ message: String) {
         logger.warning("\(message, privacy: .public)")
-        stderr("WARN", message)
+        emit("WARN", message)
     }
 
-    private static func stderr(_ level: String, _ message: String) {
+    private static func emit(_ level: String, _ message: String) {
         let ts = dateFormatter.string(from: Date())
-        FileHandle.standardError.write(Data("\(ts) [\(level)] \(message)\n".utf8))
+        let line = Data("\(ts) [\(level)] \(message)\n".utf8)
+        FileHandle.standardError.write(line)
+        fileHandle?.write(line)
     }
 }

@@ -73,6 +73,7 @@ func processNewMessages(
 // MARK: - Bootstrap
 
 let config = Config()
+Log.configure(logFile: config.logFile)
 let poller = MessagePoller(dbPath: config.chatDBPath)
 let watermark = WatermarkStore(filePath: config.watermarkFile)
 let client = JuujarvisClient(baseURL: config.apiURL)

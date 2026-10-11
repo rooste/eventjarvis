@@ -6,3 +6,5 @@ Package.resolved
 DerivedData/
 .DS_Store
 /tmp/
+logs/
+.claude/settings.local.json
